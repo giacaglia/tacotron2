@@ -37,6 +37,9 @@ class TextMelLoader(torch.utils.data.Dataset):
     def get_mel(self, filename):
         if not self.load_mel_from_disk:
             audio, sampling_rate = load_wav_to_torch(filename)
+            #mel_filename = filename.split('/')[-1]
+            #mel_filename = mel_filename.split('.')[0]
+            #mel_filename = 'ljs_dataset_folder/mels/' + mel_filename + '.npy'
             if sampling_rate != self.stft.sampling_rate:
                 raise ValueError("{} {} SR doesn't match target {} SR".format(
                     sampling_rate, self.stft.sampling_rate))
@@ -45,8 +48,13 @@ class TextMelLoader(torch.utils.data.Dataset):
             audio_norm = torch.autograd.Variable(audio_norm, requires_grad=False)
             melspec = self.stft.mel_spectrogram(audio_norm)
             melspec = torch.squeeze(melspec, 0)
+            #np_mel = melspec.numpy()
+            #np.save(mel_filename, np_mel)
+            #print('mel filename {}'.format(mel_filename))
         else:
-            melspec = torch.from_numpy(np.load(filename))
+            np_mel = np.load(filename)
+            np_mel =  np.swapaxes(np_mel, 0, 1)
+            melspec = torch.from_numpy(np_mel)
             assert melspec.size(0) == self.stft.n_mel_channels, (
                 'Mel dimension mismatch: given {}, expected {}'.format(
                     melspec.size(0), self.stft.n_mel_channels))

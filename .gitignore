@@ -1,0 +1,12 @@
+__pycache__/
+ljs_dataset_folder/
+outdir/
+text/__pycache__/
+venv/
+wandb/
+filelists/
+ljspeech/
+waveglow/
+logdir/
+logs/
+old_outdir/

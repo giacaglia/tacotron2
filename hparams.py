@@ -10,10 +10,10 @@ def create_hparams(hparams_string=None, verbose=False):
         # Experiment Parameters        #
         ################################
         epochs=500,
-        iters_per_checkpoint=1000,
+        iters_per_checkpoint=200,
         seed=1234,
         dynamic_loss_scaling=True,
-        fp16_run=False,
+        fp16_run=True,
         distributed_run=False,
         dist_backend="nccl",
         dist_url="tcp://localhost:54321",
@@ -27,6 +27,9 @@ def create_hparams(hparams_string=None, verbose=False):
         load_mel_from_disk=False,
         training_files='filelists/ljs_audio_text_train_filelist.txt',
         validation_files='filelists/ljs_audio_text_val_filelist.txt',
+        #load_mel_from_disk=True,
+        #training_files='filelists/new_train.txt',
+        #validation_files='filelists/val.txt',
         text_cleaners=['english_cleaners'],
 
         ################################
@@ -38,8 +41,8 @@ def create_hparams(hparams_string=None, verbose=False):
         hop_length=256,
         win_length=1024,
         n_mel_channels=80,
-        mel_fmin=0.0,
-        mel_fmax=8000.0,
+        mel_fmin=125,
+        mel_fmax=7600.0,
 
         ################################
         # Model Parameters             #
@@ -77,11 +80,11 @@ def create_hparams(hparams_string=None, verbose=False):
         ################################
         # Optimization Hyperparameters #
         ################################
-        use_saved_learning_rate=False,
+        use_saved_learning_rate=True,
         learning_rate=1e-3,
         weight_decay=1e-6,
         grad_clip_thresh=1.0,
-        batch_size=64,
+        batch_size=16,
         mask_padding=True  # set model's padded outputs to padded values
     )
 

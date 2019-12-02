@@ -16,6 +16,8 @@ from loss_function import Tacotron2Loss
 from logger import Tacotron2Logger
 from hparams import create_hparams
 
+import wandb
+wandb.init(project='multi_pytorch_tacotron')
 
 def reduce_tensor(tensor, n_gpus):
     rt = tensor.clone()
@@ -101,6 +103,7 @@ def load_checkpoint(checkpoint_path, model, optimizer):
     print("Loading checkpoint '{}'".format(checkpoint_path))
     checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
     model.load_state_dict(checkpoint_dict['state_dict'])
+    #print('optimizer dictionary: {}'.format(checkpoint_dict['optimizer']))
     optimizer.load_state_dict(checkpoint_dict['optimizer'])
     learning_rate = checkpoint_dict['learning_rate']
     iteration = checkpoint_dict['iteration']
@@ -109,13 +112,24 @@ def load_checkpoint(checkpoint_path, model, optimizer):
     return model, optimizer, learning_rate, iteration
 
 
-def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
+def save_checkpoint(model, optimizer, learning_rate, iteration, filepath, fp16_run, amp):
     print("Saving model and optimizer state at iteration {} to {}".format(
         iteration, filepath))
-    torch.save({'iteration': iteration,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'learning_rate': learning_rate}, filepath)
+    if fp16_run:
+        print('saving state dict: {}'.format(amp.state_dict()))
+        checkpoint = {
+            'state_dict':model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'amp': amp.state_dict(),
+            'iteration': iteration,
+            'learning_rate': learning_rate
+        }
+        torch.save(checkpoint, filepath)
+    else:
+        torch.save({'iteration': iteration,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'learning_rate': learning_rate}, filepath)
 
 
 def validate(model, criterion, valset, iteration, batch_size, n_gpus,
@@ -161,7 +175,8 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     """
     if hparams.distributed_run:
         init_distributed(hparams, n_gpus, rank, group_name)
-
+    
+    print('checkpoint path: {}'.format(checkpoint_path))
     torch.manual_seed(hparams.seed)
     torch.cuda.manual_seed(hparams.seed)
 
@@ -173,8 +188,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     if hparams.fp16_run:
         from apex import amp
         model, optimizer = amp.initialize(
-            model, optimizer, opt_level='O2')
-
+            model, optimizer, opt_level='O1')
     if hparams.distributed_run:
         model = apply_gradient_allreduce(model)
 
@@ -195,6 +209,11 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
         else:
             model, optimizer, _learning_rate, iteration = load_checkpoint(
                 checkpoint_path, model, optimizer)
+
+            if hparams.fp16_run:
+                checkpoint = torch.load(checkpoint_path, map_location='cpu')
+                amp_state_dict = checkpoint['amp']
+                amp.load_state_dict(checkpoint['amp'])
             if hparams.use_saved_learning_rate:
                 learning_rate = _learning_rate
             iteration += 1  # next iteration is iteration + 1
@@ -232,7 +251,6 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             else:
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(), hparams.grad_clip_thresh)
-
             optimizer.step()
 
             if not is_overflow and rank == 0:
@@ -250,8 +268,8 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     checkpoint_path = os.path.join(
                         output_directory, "checkpoint_{}".format(iteration))
                     save_checkpoint(model, optimizer, learning_rate, iteration,
-                                    checkpoint_path)
-
+                                    checkpoint_path, hparams.fp16_run, amp)
+                    wandb.save(checkpoint_path)
             iteration += 1
 
 
