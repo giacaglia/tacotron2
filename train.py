@@ -26,17 +26,18 @@ def reduce_tensor(tensor, n_gpus):
     return rt
 
 
-def init_distributed(hparams, n_gpus, rank, group_name):
+def init_distributed(hparams, rank, group_name):
     assert torch.cuda.is_available(), "Distributed mode requires CUDA."
     print("Initializing Distributed")
-
+    
+    print('rank: {}'.format(rank))
     # Set cuda device so everything is done on the right GPU.
     torch.cuda.set_device(rank % torch.cuda.device_count())
-
+    
     # Initialize distributed communication
     dist.init_process_group(
         backend=hparams.dist_backend, init_method=hparams.dist_url,
-        world_size=n_gpus, rank=rank, group_name=group_name)
+        world_size=hparams.world_size, rank=rank, group_name=group_name)
 
     print("Done initializing distributed")
 
@@ -62,7 +63,7 @@ def prepare_dataloaders(hparams):
 
 
 def prepare_directories_and_logger(output_directory, log_directory, rank):
-    if rank == 0:
+    if rank == 4:
         if not os.path.isdir(output_directory):
             os.makedirs(output_directory)
             os.chmod(output_directory, 0o775)
@@ -155,7 +156,7 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
         val_loss = val_loss / (i + 1)
 
     model.train()
-    if rank == 0:
+    if rank == 4:
         print("Validation loss {}: {:9f}  ".format(iteration, reduced_val_loss))
         logger.log_validation(val_loss, model, y, y_pred, iteration)
 
@@ -173,8 +174,9 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     rank (int): rank of current gpu
     hparams (object): comma separated list of "name=value" pairs.
     """
+    rank += 4
     if hparams.distributed_run:
-        init_distributed(hparams, n_gpus, rank, group_name)
+        init_distributed(hparams, rank, group_name)
     
     print('checkpoint path: {}'.format(checkpoint_path))
     torch.manual_seed(hparams.seed)
@@ -228,7 +230,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             start = time.perf_counter()
             for param_group in optimizer.param_groups:
                 param_group['lr'] = learning_rate
-
+            
             model.zero_grad()
             x, y = model.parse_batch(batch)
             y_pred = model(x)
@@ -238,6 +240,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 reduced_loss = reduce_tensor(loss.data, n_gpus).item()
             else:
                 reduced_loss = loss.item()
+
             if hparams.fp16_run:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
@@ -253,7 +256,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     model.parameters(), hparams.grad_clip_thresh)
             optimizer.step()
 
-            if not is_overflow and rank == 0:
+            if not is_overflow and rank == 4:
                 duration = time.perf_counter() - start
                 print("Train loss {} {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
                     iteration, reduced_loss, grad_norm, duration))
@@ -264,7 +267,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 validate(model, criterion, valset, iteration,
                          hparams.batch_size, n_gpus, collate_fn, logger,
                          hparams.distributed_run, rank)
-                if rank == 0:
+                if rank == 4:
                     checkpoint_path = os.path.join(
                         output_directory, "checkpoint_{}".format(iteration))
                     save_checkpoint(model, optimizer, learning_rate, iteration,
@@ -291,6 +294,7 @@ if __name__ == '__main__':
                         required=False, help='Distributed group name')
     parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
+
 
     args = parser.parse_args()
     hparams = create_hparams(args.hparams)
