@@ -16,13 +16,10 @@ from loss_function import Tacotron2Loss
 from logger import Tacotron2Logger
 from hparams import create_hparams
 
-import wandb
-wandb.init(project='multi_pytorch_tacotron')
-
-def reduce_tensor(tensor, n_gpus):
+def reduce_tensor(tensor, world_size):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.reduce_op.SUM)
-    rt /= n_gpus
+    rt /= world_size
     return rt
 
 
@@ -63,7 +60,7 @@ def prepare_dataloaders(hparams):
 
 
 def prepare_directories_and_logger(output_directory, log_directory, rank):
-    if rank == 4:
+    if rank == 0:
         if not os.path.isdir(output_directory):
             os.makedirs(output_directory)
             os.chmod(output_directory, 0o775)
@@ -133,7 +130,7 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath, fp16_r
                     'learning_rate': learning_rate}, filepath)
 
 
-def validate(model, criterion, valset, iteration, batch_size, n_gpus,
+def validate(model, criterion, valset, iteration, batch_size, world_size,
              collate_fn, logger, distributed_run, rank):
     """Handles all the validation scoring and printing"""
     model.eval()
@@ -146,17 +143,21 @@ def validate(model, criterion, valset, iteration, batch_size, n_gpus,
         val_loss = 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
+            from hashlib import sha1
+            foo = sha1(x)
+            print('Before')
+            print(foo.hexdigest())
             y_pred = model(x)
             loss = criterion(y_pred, y)
             if distributed_run:
-                reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
+                reduced_val_loss = reduce_tensor(loss.data, world_size).item()
             else:
                 reduced_val_loss = loss.item()
             val_loss += reduced_val_loss
         val_loss = val_loss / (i + 1)
 
     model.train()
-    if rank == 4:
+    if rank == 0:
         print("Validation loss {}: {:9f}  ".format(iteration, reduced_val_loss))
         logger.log_validation(val_loss, model, y, y_pred, iteration)
 
@@ -174,7 +175,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     rank (int): rank of current gpu
     hparams (object): comma separated list of "name=value" pairs.
     """
-    rank += 4
+    #rank += 4
     if hparams.distributed_run:
         init_distributed(hparams, rank, group_name)
     
@@ -221,6 +222,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             iteration += 1  # next iteration is iteration + 1
             epoch_offset = max(0, int(iteration / len(train_loader)))
 
+    #print('HERE')
     model.train()
     is_overflow = False
     # ================ MAIN TRAINNIG LOOP! ===================
@@ -233,11 +235,17 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             
             model.zero_grad()
             x, y = model.parse_batch(batch)
+
+            #print('X value')
+            #from hashlib import sha1
+            #np_x = x[0].data.cpu().numpy()
+            #foo = sha1(np_x)
+            #print(foo.hexdigest())
             y_pred = model(x)
 
             loss = criterion(y_pred, y)
             if hparams.distributed_run:
-                reduced_loss = reduce_tensor(loss.data, n_gpus).item()
+                reduced_loss = reduce_tensor(loss.data, hparams.world_size).item()
             else:
                 reduced_loss = loss.item()
 
@@ -256,7 +264,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     model.parameters(), hparams.grad_clip_thresh)
             optimizer.step()
 
-            if not is_overflow and rank == 4:
+            if not is_overflow and rank == 0:
                 duration = time.perf_counter() - start
                 print("Train loss {} {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
                     iteration, reduced_loss, grad_norm, duration))
@@ -264,10 +272,10 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     reduced_loss, grad_norm, learning_rate, duration, iteration)
 
             if not is_overflow and (iteration % hparams.iters_per_checkpoint == 0):
-                validate(model, criterion, valset, iteration,
-                         hparams.batch_size, n_gpus, collate_fn, logger,
-                         hparams.distributed_run, rank)
-                if rank == 4:
+                #validate(model, criterion, valset, iteration,
+                #         hparams.batch_size, hparams.world_size, collate_fn, logger,
+                #         hparams.distributed_run, rank)
+                if rank == 0:
                     checkpoint_path = os.path.join(
                         output_directory, "checkpoint_{}".format(iteration))
                     save_checkpoint(model, optimizer, learning_rate, iteration,
@@ -295,10 +303,12 @@ if __name__ == '__main__':
     parser.add_argument('--hparams', type=str,
                         required=False, help='comma separated name=value pairs')
 
-
     args = parser.parse_args()
     hparams = create_hparams(args.hparams)
 
+    if args.rank == 0:
+        import wandb
+        wandb.init(project='multi_blizzard')
     torch.backends.cudnn.enabled = hparams.cudnn_enabled
     torch.backends.cudnn.benchmark = hparams.cudnn_benchmark
 

@@ -10,3 +10,9 @@ waveglow/
 logdir/
 logs/
 old_outdir/
+blizzard/
+blizzard_outdir/
+waveglow/
+blizzard_outdir_2/
+ljspeech_outdir/
+obama-2.0/

@@ -16,21 +16,21 @@ def create_hparams(hparams_string=None, verbose=False):
         fp16_run=True,
         distributed_run=True,
         dist_backend="nccl",
-        dist_url="tcp://10.142.0.10:54321",
+        dist_url="tcp://localhost:54321",
+        #dist_url="tcp://10.142.0.10:54321",
         cudnn_enabled=True,
         cudnn_benchmark=False,
-        world_size=8,
+        world_size=4,
         ignore_layers=['embedding.weight'],
 
         ################################
         # Data Parameters             #
         ################################
         load_mel_from_disk=False,
-        training_files='filelists/ljs_audio_text_train_filelist.txt',
-        validation_files='filelists/ljs_audio_text_val_filelist.txt',
-        #load_mel_from_disk=True,
-        #training_files='filelists/new_train.txt',
-        #validation_files='filelists/val.txt',
+        #training_files='filelists/ljs_audio_text_train_filelist.txt',
+        #validation_files='filelists/ljs_audio_text_val_filelist.txt',
+        training_files='filelists/train.txt',
+        validation_files='filelists/val.txt',
         text_cleaners=['english_cleaners'],
 
         ################################
@@ -85,7 +85,7 @@ def create_hparams(hparams_string=None, verbose=False):
         learning_rate=1e-3,
         weight_decay=1e-6,
         grad_clip_thresh=1.0,
-        batch_size=8,
+        batch_size=2,
         mask_padding=True  # set model's padded outputs to padded values
     )
 

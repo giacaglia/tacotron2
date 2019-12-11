@@ -14,6 +14,8 @@ argslist.append("--group_name=group_{}".format(job_id))
 os.environ['MASTER_ADDR'] = '10.142.0.10'
 os.environ['MASTER_PORT'] = '54321'
 
+from tensorboardX import SummaryWriter
+
 for i in range(num_gpus):
     argslist.append('--rank={}'.format(i))
     stdout = None if i == 0 else open("logs/{}_GPU_{}.log".format(job_id, i),

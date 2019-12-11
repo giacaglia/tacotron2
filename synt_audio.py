@@ -39,12 +39,13 @@ plot_data(np_mels, output_file='old_waves.png')
 
 hparams = create_hparams()
 
-checkpoint_path = "./outdir/checkpoint_12400"
+#checkpoint_path = "./outdir/checkpoint_12400"
+checkpoint_path = './blizzard_outdir/checkpoint_28000'
 model = load_model(hparams)
 model.load_state_dict(torch.load(checkpoint_path)['state_dict'])
 _ = model.cuda().eval().half()
 
-text = "association at one time forbidden by custom, but which greed and rapacity long made the rule."
+text = "Mike Krieger is really awesomem"
 sequence = np.array(text_to_sequence(text, ['english_cleaners']))[None, :]
 sequence = torch.autograd.Variable(
             torch.from_numpy(sequence)).cuda().long()
